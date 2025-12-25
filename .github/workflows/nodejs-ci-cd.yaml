@@ -1,4 +1,4 @@
-name: NodeJS CI-CD (Docker + Trivy)
+name: NodeJS CI-CD (Multi-Stage with Artifacts)
 
 on:
   push:
@@ -6,15 +6,60 @@ on:
 
 env:
   IMAGE_NAME: node-microservice
+  IMAGE_TAG: latest
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
 jobs:
-  build-push-scan:
+
+# -------------------------------------------------
+# 1️⃣ INTEGRATION STAGE
+# -------------------------------------------------
+  integration:
     runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 18
+    - run: npm install
+    - run: npm test
+
+# -------------------------------------------------
+# 2️⃣ BUILD STAGE
+# -------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    needs: integration
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+
+    - name: Build Docker Image
+      run: |
+        docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG .
+        docker save $DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG -o image.tar
+
+    - name: Upload Docker Image Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-image
+        path: image.tar
+
+# -------------------------------------------------
+# 3️⃣ PUSH STAGE
+# -------------------------------------------------
+  push:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - name: Download Docker Image Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-image
+
+    - name: Load Docker Image
+      run: docker load -i image.tar
 
     - name: Docker Login
       uses: docker/login-action@v3
@@ -22,15 +67,18 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: Build Docker Image
-      run: |
-        docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:latest .
+    - name: Push Image to DockerHub
+      run: docker push $DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG
 
-    - name: Push Docker Image
-      run: |
-        docker push $DOCKERHUB_USERNAME/$IMAGE_NAME:latest
+# -------------------------------------------------
+# 4️⃣ SECURITY SCAN STAGE (TRIVY)
+# -------------------------------------------------
+  security_scan:
+    runs-on: ubuntu-latest
+    needs: push
 
-    - name: Trivy Scan (LATEST)
+    steps:
+    - name: Trivy Scan Image from DockerHub
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/node-microservice:latest
@@ -40,3 +88,24 @@ jobs:
       env:
         TRIVY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+
+# -------------------------------------------------
+# 5️⃣ DEPLOY STAGE (OPTIONAL)
+# -------------------------------------------------
+  deploy:
+    runs-on: ubuntu-latest
+    needs: security_scan
+
+    steps:
+    - name: Deploy via SSH
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        script: |
+          docker pull $DOCKERHUB_USERNAME/$IMAGE_NAME:latest
+          docker stop node-app || true
+          docker rm node-app || true
+          docker run -d --name node-app -p 3000:3000 \
+            $DOCKERHUB_USERNAME/$IMAGE_NAME:latest
