@@ -91,9 +91,9 @@ jobs:
         exit-code: 1
         format: table
         scanners: vuln
-    env:
-      TRIVY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+      env:
+        TRIVY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
 
 # -------------------------------------------------
 # 5️⃣ DEPLOY STAGE (DOCKER HOST)
