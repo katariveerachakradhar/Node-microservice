@@ -9,10 +9,11 @@ env:
   IMAGE_NAME: node-microservice
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
+jobs:
+
 # -------------------------------------------------
 # 1️⃣ INTEGRATION STAGE
 # -------------------------------------------------
-jobs:
   integration:
     name: Integration - Install & Test
     runs-on: ubuntu-latest
@@ -52,9 +53,7 @@ jobs:
 
     - name: Build Docker Image
       run: |
-        docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:${{ github.sha }} .
-        docker tag $DOCKERHUB_USERNAME/$IMAGE_NAME:${{ github.sha }} \
-                   $DOCKERHUB_USERNAME/$IMAGE_NAME:latest
+        docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:latest .
 
 # -------------------------------------------------
 # 3️⃣ PUSH STAGE
@@ -73,26 +72,49 @@ jobs:
 
     - name: Push Image to DockerHub
       run: |
-        docker push $DOCKERHUB_USERNAME/$IMAGE_NAME:${{ github.sha }}
         docker push $DOCKERHUB_USERNAME/$IMAGE_NAME:latest
 
 # -------------------------------------------------
 # 4️⃣ SECURITY SCAN STAGE (TRIVY)
 # -------------------------------------------------
   security_scan:
-  name: Trivy Image Scan
-  runs-on: ubuntu-latest
-  needs: push
+    name: Trivy Image Scan
+    runs-on: ubuntu-latest
+    needs: push
 
-  steps:
-  - name: Trivy Scan Image from DockerHub
-    uses: aquasecurity/trivy-action@master
-    with:
-      image-ref: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/node-microservice:${{ github.sha }}
-      severity: HIGH,CRITICAL
-      exit-code: 1
-      format: table
-      scanners: vuln
+    steps:
+    - name: Trivy Scan Image from DockerHub
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/node-microservice:latest
+        severity: HIGH,CRITICAL
+        exit-code: 1
+        format: table
+        scanners: vuln
     env:
       TRIVY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+
+# -------------------------------------------------
+# 5️⃣ DEPLOY STAGE (DOCKER HOST)
+# -------------------------------------------------
+  deploy:
+    name: Deploy to Docker Server
+    runs-on: ubuntu-latest
+    needs: security_scan
+
+    steps:
+    - name: Deploy via SSH
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.SERVER_HOST }}
+        username: ${{ secrets.SERVER_USER }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        script: |
+          docker pull $DOCKERHUB_USERNAME/$IMAGE_NAME:latest
+          docker stop node-app || true
+          docker rm node-app || true
+          docker run -d \
+            --name node-app \
+            -p 3000:3000 \
+            $DOCKERHUB_USERNAME/$IMAGE_NAME:latest
