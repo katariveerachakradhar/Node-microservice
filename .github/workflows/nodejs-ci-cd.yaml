@@ -77,7 +77,7 @@ jobs:
     needs: push
 
     steps:
-    - name: Trivy Scan (FAIL ONLY ON CRITICAL)
+    - name: Trivy Scan (Fail only on CRITICAL)
       uses: aquasecurity/trivy-action@master
       with:
         image-ref: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/node-microservice:latest
@@ -87,3 +87,4 @@ jobs:
       env:
         TRIVY_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         TRIVY_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+
