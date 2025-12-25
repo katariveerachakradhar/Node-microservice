@@ -10,14 +10,14 @@ env:
 
 jobs:
 
-# ---------------- STAGE 1 ----------------
+# ---------- STAGE 1: CHECKOUT ----------
   checkout:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
 
-# ---------------- STAGE 2 ----------------
+# ---------- STAGE 2: INSTALL ----------
   install:
     runs-on: ubuntu-latest
     needs: checkout
@@ -30,11 +30,11 @@ jobs:
         with:
           node-version: 18
 
-      ✅ - name: Install dependencies
+      - name: Install dependencies
         run: npm install
 
 
-# ---------------- STAGE 3 ----------------
+# ---------- STAGE 3: DOCKER BUILD ----------
   docker-build:
     runs-on: ubuntu-latest
     needs: install
@@ -46,7 +46,7 @@ jobs:
         run: docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:latest .
 
 
-# ---------------- STAGE 4 ----------------
+# ---------- STAGE 4: DOCKER PUSH ----------
   docker-push:
     runs-on: ubuntu-latest
     needs: docker-build
@@ -58,11 +58,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Push Image
+      - name: Push Docker image
         run: docker push $DOCKERHUB_USERNAME/$IMAGE_NAME:latest
 
 
-# ---------------- STAGE 5 ----------------
+# ---------- STAGE 5: SECURITY SCAN ----------
   trivy-scan:
     runs-on: ubuntu-latest
     needs: docker-push
